@@ -70,12 +70,15 @@ async function fetchAccountInfo() {
 // === REFRESH LOOP ===
 setInterval(fetchAccountInfo, 10000); // every 10 seconds
 
-// === SERVE LIVE DASHBOARD ===
-app.use(express.static(path.join(__dirname, 'public')));
+// === FIX: Serve from actual frontend folder ===
+const frontendPath = path.join(__dirname, 'frontend');
+app.use(express.static(frontendPath));
+
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/index.html'));
+  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
+// === START SERVER ===
 app.listen(PORT, () => {
   console.log(`🌐 Server running on http://localhost:${PORT}`);
   fetchAccountInfo();
