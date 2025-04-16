@@ -14,8 +14,7 @@
     "sourceMap": false,
     "resolveJsonModule": true,
     "types": [
-      "node",
-      "mocha"
+      "node"
     ],
     "baseUrl": "./",
     "paths": {
