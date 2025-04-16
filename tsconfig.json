@@ -6,16 +6,15 @@
     "declaration": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
-    "experimentalDecorators":true,
-    "emitDecoratorMetadata":true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "downlevelIteration": true,
     "sourceMap": false,
     "resolveJsonModule": true,
     "types": [
-      "node",
-      "mocha"
+      "node"
     ],
     "baseUrl": "./",
     "paths": {
