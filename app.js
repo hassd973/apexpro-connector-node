@@ -10,9 +10,25 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
 const PORT = process.env.PORT || 10000;
+
+let cachedAccount = null;
+
+// ✅ Validate env vars early
+const requiredEnv = [
+  'APEX_API_KEY',
+  'APEX_PASSPHRASE',
+  'APEX_SECRET',
+  'APEX_L2KEY',
+  'APEX_ETH_ADDRESS'
+];
+requiredEnv.forEach((key) => {
+  if (!process.env[key]) {
+    console.error(`❌ Missing environment variable: ${key}`);
+    process.exit(1);
+  }
+});
 
 // === AUTH HEADERS ===
 function getAuthHeaders(body = '') {
@@ -35,51 +51,54 @@ function getAuthHeaders(body = '') {
 // === GET ACCOUNT INFO ===
 async function fetchAccountInfo() {
   try {
+    const body = `l2Key=${process.env.APEX_L2KEY}&ethereumAddress=${process.env.APEX_ETH_ADDRESS}`;
     const res = await axios.post(
       'https://omni.apex.exchange/api/v3/onboarding',
-      `l2Key=${process.env.APEX_L2KEY}&ethereumAddress=${process.env.APEX_ETH_ADDRESS}`,
-      {
-        headers: getAuthHeaders(
-          `l2Key=${process.env.APEX_L2KEY}&ethereumAddress=${process.env.APEX_ETH_ADDRESS}`
-        ),
-      }
+      body,
+      { headers: getAuthHeaders(body) }
     );
 
     const { account } = res.data;
+    cachedAccount = account;
+
     console.clear();
-    console.log('🧊 ICE KING BOT STATUS 🧊');
-    console.log('👤 Account ID:', account.id);
+    console.log('🧊 ICE KING BOT STATUS 👑');
+    console.log(`👤 Account ID: ${account.id}`);
     console.log('💼 Spot Wallets:');
-    account.spotWallets.forEach(w => {
-      console.log(`  💰 ${w.tokenId}: ${w.balance}`);
-    });
+    account.spotWallets.forEach(w =>
+      console.log(`  💰 ${w.tokenId}: ${w.balance}`)
+    );
 
     console.log('\n📈 Positions:');
-    account.positions.forEach(p => {
-      console.log(
-        `  📊 ${p.symbol} | ${p.side} | Size: ${p.size} | Entry: ${p.entryPrice}`
-      );
-    });
-
-    return account;
-  } catch (error) {
-    console.error('⚠️ Failed to fetch account info:', error.message);
+    account.positions.forEach(p =>
+      console.log(`  📊 ${p.symbol} | ${p.side} | Size: ${p.size} | Entry: ${p.entryPrice}`)
+    );
+  } catch (err) {
+    console.error('⚠️ Failed to fetch account info:', err.message);
   }
 }
 
-// === REFRESH LOOP ===
-setInterval(fetchAccountInfo, 10000); // every 10 seconds
+// === JSON API for frontend ===
+app.get('/balance', (req, res) => {
+  if (!cachedAccount) return res.status(503).json({ error: 'No account data yet.' });
+  res.json({ balances: cachedAccount.spotWallets });
+});
 
-// === FIX: Serve from actual frontend folder ===
-const frontendPath = path.join(__dirname, 'frontend');
-app.use(express.static(frontendPath));
+app.get('/positions', (req, res) => {
+  if (!cachedAccount) return res.status(503).json({ error: 'No account data yet.' });
+  res.json({ openPositions: cachedAccount.positions });
+});
+
+// === FRONTEND STATIC FILES ===
+app.use(express.static(path.join(__dirname, 'frontend')));
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'index.html'));
+  res.sendFile(path.join(__dirname, 'frontend/index.html'));
 });
 
 // === START SERVER ===
 app.listen(PORT, () => {
   console.log(`🌐 Server running on http://localhost:${PORT}`);
   fetchAccountInfo();
+  setInterval(fetchAccountInfo, 10000); // Every 10s
 });
