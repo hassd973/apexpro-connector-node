@@ -1,28 +1,124 @@
-const express = require('express');
-const { ApexClient } = require('apexpro-connector-node');
+import express from 'express';
+import axios from 'axios';
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(express.json());
 
-// Dummy route to fulfill web service port binding
-app.get('/', (req, res) => {
-  res.send('ApexPro Connector Node is running.');
+const BASE_URL = 'https://omni.apex.exchange/api/v3';
+const PORT = process.env.PORT || 10000;
+
+const headers = (timestamp, signature) => ({
+  'APEX-TIMESTAMP': timestamp,
+  'APEX-SIGNATURE': signature,
+  'APEX-API-KEY': process.env.APEX_API_KEY,
+  'APEX-PASSPHRASE': process.env.APEX_PASSPHRASE
 });
 
-// Start your bot’s logic (adjust as needed)
-(async () => {
-  try {
-    // For example, create an Omni client instance
-    const client = ApexClient.createOmniClient();
-    // Call some client methods (this is an example, adjust based on the API)
-    // let result = await client.someMethod();
-    console.log('Bot logic initiated...');
-  } catch (error) {
-    console.error('Error starting bot:', error);
-  }
-})();
+const signPayload = (payload) => {
+  return crypto
+    .createHmac('sha256', process.env.APEX_API_SECRET)
+    .update(payload)
+    .digest('hex');
+};
 
-// Listen on the designated port
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+// 🧠 Utility
+const now = () => Date.now().toString();
+
+// 🧾 Place Order
+async function placeOrder(data) {
+  const timestamp = now();
+  const query = new URLSearchParams(data).toString();
+  const signature = signPayload(`${timestamp}${query}`);
+
+  const res = await axios.post(`${BASE_URL}/order`, query, {
+    headers: headers(timestamp, signature),
+  });
+  return res.data;
+}
+
+// ❌ Cancel Order by ID
+async function cancelOrder(id) {
+  const timestamp = now();
+  const signature = signPayload(`${timestamp}id=${id}`);
+
+  const res = await axios.post(`${BASE_URL}/delete-order`, `id=${id}`, {
+    headers: headers(timestamp, signature),
+  });
+  return res.data;
+}
+
+// 🔍 Get Open Orders
+async function getOpenOrders() {
+  const timestamp = now();
+  const signature = signPayload(timestamp);
+
+  const res = await axios.get(`${BASE_URL}/open-orders`, {
+    headers: headers(timestamp, signature),
+  });
+  return res.data;
+}
+
+// 📈 Account Info
+async function getAccount() {
+  const timestamp = now();
+  const signature = signPayload(timestamp);
+
+  const res = await axios.get(`${BASE_URL}/account`, {
+    headers: headers(timestamp, signature),
+  });
+  return res.data;
+}
+
+// 💹 Historical PnL
+async function getPnLHistory() {
+  const timestamp = now();
+  const signature = signPayload(timestamp);
+
+  const res = await axios.get(`${BASE_URL}/historical-pnl`, {
+    headers: headers(timestamp, signature),
+  });
+  return res.data;
+}
+
+// 🛠 INIT Bot on Start
+async function init() {
+  console.log("📊 Booting Omni Trading Bot...");
+
+  try {
+    const account = await getAccount();
+    console.log("🧾 Account:", account);
+
+    const orders = await getOpenOrders();
+    console.log("📋 Open Orders:", orders);
+
+    const pnl = await getPnLHistory();
+    console.log("💰 PnL History:", pnl);
+
+    // Optional: Place a sample order
+    // const order = await placeOrder({
+    //   symbol: 'BTC-USDT',
+    //   side: 'BUY',
+    //   type: 'LIMIT',
+    //   size: '0.01',
+    //   price: '30000',
+    //   limitFee: '1',
+    //   expiration: `${Date.now() + 60000}`,
+    //   timeInForce: 'GOOD_TIL_CANCEL',
+    //   clientOrderId: crypto.randomUUID(),
+    //   signature: 'your-zk-signature'
+    // });
+    // console.log("🚀 Placed Order:", order);
+
+  } catch (err) {
+    console.error("❌ Bot Error:", err.response?.data || err.message);
+  }
+}
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+  init(); // Start bot logic on deploy
 });
