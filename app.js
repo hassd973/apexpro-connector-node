@@ -1,124 +1,109 @@
+// app.js
 import express from 'express';
+import dotenv from 'dotenv';
 import axios from 'axios';
 import crypto from 'crypto';
-import dotenv from 'dotenv';
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-const BASE_URL = 'https://omni.apex.exchange/api/v3';
-const PORT = process.env.PORT || 10000;
+const API_URL = 'https://omni.apex.exchange/api/v3';
+const {
+  APEX_API_KEY,
+  APEX_API_SECRET,
+  APEX_PASSPHRASE,
+  ETH_ADDRESS,
+  L2_KEY
+} = process.env;
 
-const headers = (timestamp, signature) => ({
-  'APEX-TIMESTAMP': timestamp,
-  'APEX-SIGNATURE': signature,
-  'APEX-API-KEY': process.env.APEX_API_KEY,
-  'APEX-PASSPHRASE': process.env.APEX_PASSPHRASE
-});
+const getTimestamp = () => Date.now().toString();
 
-const signPayload = (payload) => {
+const signRequest = (method, endpoint, timestamp, body = '') => {
+  const prehash = `${timestamp}${method}${endpoint}${body}`;
   return crypto
-    .createHmac('sha256', process.env.APEX_API_SECRET)
-    .update(payload)
+    .createHmac('sha256', APEX_API_SECRET)
+    .update(prehash)
     .digest('hex');
 };
 
-// 🧠 Utility
-const now = () => Date.now().toString();
-
-// 🧾 Place Order
-async function placeOrder(data) {
-  const timestamp = now();
-  const query = new URLSearchParams(data).toString();
-  const signature = signPayload(`${timestamp}${query}`);
-
-  const res = await axios.post(`${BASE_URL}/order`, query, {
-    headers: headers(timestamp, signature),
-  });
-  return res.data;
-}
-
-// ❌ Cancel Order by ID
-async function cancelOrder(id) {
-  const timestamp = now();
-  const signature = signPayload(`${timestamp}id=${id}`);
-
-  const res = await axios.post(`${BASE_URL}/delete-order`, `id=${id}`, {
-    headers: headers(timestamp, signature),
-  });
-  return res.data;
-}
-
-// 🔍 Get Open Orders
-async function getOpenOrders() {
-  const timestamp = now();
-  const signature = signPayload(timestamp);
-
-  const res = await axios.get(`${BASE_URL}/open-orders`, {
-    headers: headers(timestamp, signature),
-  });
-  return res.data;
-}
-
-// 📈 Account Info
-async function getAccount() {
-  const timestamp = now();
-  const signature = signPayload(timestamp);
-
-  const res = await axios.get(`${BASE_URL}/account`, {
-    headers: headers(timestamp, signature),
-  });
-  return res.data;
-}
-
-// 💹 Historical PnL
-async function getPnLHistory() {
-  const timestamp = now();
-  const signature = signPayload(timestamp);
-
-  const res = await axios.get(`${BASE_URL}/historical-pnl`, {
-    headers: headers(timestamp, signature),
-  });
-  return res.data;
-}
-
-// 🛠 INIT Bot on Start
-async function init() {
-  console.log("📊 Booting Omni Trading Bot...");
-
-  try {
-    const account = await getAccount();
-    console.log("🧾 Account:", account);
-
-    const orders = await getOpenOrders();
-    console.log("📋 Open Orders:", orders);
-
-    const pnl = await getPnLHistory();
-    console.log("💰 PnL History:", pnl);
-
-    // Optional: Place a sample order
-    // const order = await placeOrder({
-    //   symbol: 'BTC-USDT',
-    //   side: 'BUY',
-    //   type: 'LIMIT',
-    //   size: '0.01',
-    //   price: '30000',
-    //   limitFee: '1',
-    //   expiration: `${Date.now() + 60000}`,
-    //   timeInForce: 'GOOD_TIL_CANCEL',
-    //   clientOrderId: crypto.randomUUID(),
-    //   signature: 'your-zk-signature'
-    // });
-    // console.log("🚀 Placed Order:", order);
-
-  } catch (err) {
-    console.error("❌ Bot Error:", err.response?.data || err.message);
+const axiosPrivate = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json'
   }
-}
+});
 
+const privateRequest = async (method, endpoint, body = {}) => {
+  const timestamp = getTimestamp();
+  const bodyString = method === 'GET' ? '' : JSON.stringify(body);
+  const signature = signRequest(method, endpoint, timestamp, bodyString);
+
+  const headers = {
+    'APEX-API-KEY': APEX_API_KEY,
+    'APEX-PASSPHRASE': APEX_PASSPHRASE,
+    'APEX-TIMESTAMP': timestamp,
+    'APEX-SIGNATURE': signature
+  };
+
+  return axiosPrivate({
+    method,
+    url: endpoint,
+    data: body,
+    headers
+  });
+};
+
+// Health check
+app.get('/', (req, res) => {
+  res.send('Omni Trading Bot is running.');
+});
+
+// Account info
+app.get('/account', async (req, res) => {
+  try {
+    const response = await privateRequest('GET', '/account');
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Place new order
+app.post('/order', async (req, res) => {
+  try {
+    const order = req.body;
+    const response = await privateRequest('POST', '/order', order);
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel order
+app.post('/cancel', async (req, res) => {
+  try {
+    const { id } = req.body;
+    const response = await privateRequest('POST', '/delete-order', { id });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get open orders
+app.get('/orders', async (req, res) => {
+  try {
+    const response = await privateRequest('GET', '/open-orders');
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start server
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
-  init(); // Start bot logic on deploy
+  console.log(`Bot logic initiated...\nServer listening on port ${PORT}`);
 });
